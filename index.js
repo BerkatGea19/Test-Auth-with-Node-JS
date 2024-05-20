@@ -1,20 +1,151 @@
+const path = require('path');
 const express = require('express')
 const app = express()
 const port = 3000
 const bodyParser = require('body-parser')
 const db = require('./connection')
 const response=require('./response')
-const exphbs = require('express-handlebars');
-const cookieParser = require('cookie-parser');
+const exphbs = require('express-handlebars')
+const cookieParser = require('cookie-parser')
 
+// untuk URL-encoded bodies
+app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use(bodyParser.json())
+// untuk parse cookies dari HTTP Request
+app.use(cookieParser());
 
+// Configure express-handlebars
+app.engine('hbs', exphbs.engine({
+  extname: '.hbs'
+}));
 
+app.set('view engine', 'hbs');
+app.set('views', './views');
 
-app.get('/', (req, res) => {
-  response(200, "API v1 ready to go", "SUCCESS", res)
-})
+app.use(bodyParser.json());
+
+app.get('/', function (req, res) {
+  res.render('home');
+});
+
+app.get('/register', (req, res) => {
+  res.render('register');
+});
+const crypto = require('crypto');
+
+const getHashedPassword = (password) => {
+  const sha256 = crypto.createHash('sha256');
+  const hash = sha256.update(password).digest('base64');
+  return hash;
+}
+const users = [
+  {
+    firstName: 'Berkat',
+    lastName: 'Gea',
+    email: 'test1@email.com',
+    // This is the SHA256 hash for value of `password`
+    password: 'XohImNooBHFR0OVvjcYpJ3NgPQ1qq73WKhHvch0VQtg='
+  }
+];
+
+app.post('/register', (req, res) => {
+  const { email, firstName, lastName, password, confirmPassword } = req.body;
+  if (password === confirmPassword) {
+    if (users.find(user => user.email === email)) {
+
+      res.render('register', {
+        message: 'User already registered.',
+        messageClass: 'alert-danger'
+      });
+
+      return;
+    }
+
+    const hashedPassword = getHashedPassword(password);
+    users.push({
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword
+    });
+
+    res.render('login', {
+      message: 'Registration Complete. Please login to continue.',
+      messageClass: 'alert-success'
+    });
+  } else {
+    res.render('register', {
+      message: 'Password does not match.',
+      messageClass: 'alert-danger'
+    });
+  }
+});
+
+app.get('/login', (req, res) => {
+  res.render('login');
+});
+
+const generateAuthToken = () => {
+  return crypto.randomBytes(30).toString('hex');
+}
+const authTokens = {};
+
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
+  const hashedPassword = getHashedPassword(password);
+
+  const user = users.find(u => {
+    return u.email === email && hashedPassword === u.password
+  });
+
+  if (user) {
+    const authToken = generateAuthToken();
+
+    authTokens[authToken] = user;
+
+    res.cookie('AuthToken', authToken);
+
+    res.redirect('/protected');
+  } else {
+    res.render('login', {
+      message: 'Invalid username or password',
+      messageClass: 'alert-danger'
+    });
+  }
+});
+app.use((req, res, next) => {
+  const authToken = req.cookies['AuthToken'];
+
+  req.user = authTokens[authToken];
+
+  next();
+});
+
+app.get('/protected', (req, res) => {
+  if (req.user) {
+    res.render('protected');
+  } else {
+    res.render('login', {
+      message: 'Please login to continue',
+      messageClass: 'alert-danger'
+    });
+  }
+});
+app.get('/logout', function(req, res) {
+  cookie = req.cookies;
+  for(var prop in cookie){
+    if (!cookie.hasOwnProperty(prop)) {
+      continue;
+    }
+    res.cookie(prop, '', {expires: new Date(0)});
+    console.log("User Logout")
+  }
+  res.redirect('/login');
+});
+
+// app.get('/', (req, res) => {
+//   response(200, "API v1 ready to go", "SUCCESS", res)
+// })
 
 app.get('/mahasiswa', (req, res) => {
   const sql = "SELECT * FROM mahasiswa"
@@ -88,6 +219,8 @@ app.delete("/mahasiswa", (req, res) => {
 
 })
 
+
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
+  console.log(`Example app listening on port ${port}`);
+  console.log(app.get('views'));
 })
